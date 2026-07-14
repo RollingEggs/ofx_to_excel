@@ -390,10 +390,12 @@
 
   /* ---------- コピー（タブ区切り + HTMLテーブル） ---------- */
 
-  function buildClipboardData() {
+  function buildClipboardData(includeHeader) {
     const headers = COLUMNS.map(c => c.label);
-    const lines = [headers.join("\t")];
-    const htmlRows = ["<tr>" + headers.map(h => "<th>" + esc(h) + "</th>").join("") + "</tr>"];
+    const lines = includeHeader ? [headers.join("\t")] : [];
+    const htmlRows = includeHeader
+      ? ["<tr>" + headers.map(h => "<th>" + esc(h) + "</th>").join("") + "</tr>"]
+      : [];
 
     currentRows.forEach(function (r) {
       const cells = COLUMNS.map(function (c) {
@@ -412,7 +414,8 @@
   }
 
   async function copyTable() {
-    const { text, html } = buildClipboardData();
+    // 項目（ヘッダー行）は含めず、データ行のみをコピー
+    const { text, html } = buildClipboardData(false);
     try {
       if (navigator.clipboard && window.ClipboardItem) {
         await navigator.clipboard.write([
@@ -446,7 +449,7 @@
   }
 
   function downloadCSV() {
-    const { text } = buildClipboardData();
+    const { text } = buildClipboardData(true);
     // Excel(日本語)向けに BOM + タブ→カンマではなくタブ区切りTSVをCSV拡張で保存
     const bom = "﻿";
     const blob = new Blob([bom + text], { type: "text/tab-separated-values;charset=utf-8" });
