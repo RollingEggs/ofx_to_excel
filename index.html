@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OFX → Excel 変換ツール</title>
+<style>
+  :root {
+    --bg: #f4f6f9;
+    --card: #ffffff;
+    --border: #d7dee8;
+    --accent: #2563eb;
+    --accent-light: #dbeafe;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --plus: #047857;
+    --minus: #b91c1c;
+    --row-hover: #eef4ff;
+    --shadow: 0 1px 3px rgba(0,0,0,.08), 0 8px 24px rgba(0,0,0,.06);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN",
+                 "Yu Gothic", Meiryo, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+  }
+  header {
+    background: linear-gradient(135deg, #1e40af, #2563eb);
+    color: #fff;
+    padding: 28px 20px;
+    text-align: center;
+  }
+  header h1 { margin: 0; font-size: 1.5rem; letter-spacing: .02em; }
+  header p { margin: 6px 0 0; opacity: .9; font-size: .9rem; }
+  main { max-width: 1080px; margin: 0 auto; padding: 24px 20px 60px; }
+
+  #drop {
+    border: 2px dashed var(--border);
+    border-radius: 14px;
+    background: var(--card);
+    padding: 48px 20px;
+    text-align: center;
+    color: var(--muted);
+    cursor: pointer;
+    transition: border-color .15s, background .15s, transform .05s;
+    box-shadow: var(--shadow);
+  }
+  #drop:hover { border-color: var(--accent); }
+  #drop.drag {
+    border-color: var(--accent);
+    background: var(--accent-light);
+    color: var(--accent);
+    transform: scale(1.005);
+  }
+  #drop .icon { font-size: 2.6rem; display: block; margin-bottom: 10px; }
+  #drop strong { color: var(--text); }
+  #drop.drag strong { color: var(--accent); }
+  #fileInput { display: none; }
+
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin: 24px 0 12px;
+  }
+  .toolbar .meta { color: var(--muted); font-size: .88rem; flex: 1 1 auto; min-width: 200px; }
+  button.btn {
+    border: 0;
+    background: var(--accent);
+    color: #fff;
+    padding: 9px 18px;
+    border-radius: 8px;
+    font-size: .9rem;
+    cursor: pointer;
+    transition: background .15s, transform .05s;
+  }
+  button.btn:hover { background: #1d4ed8; }
+  button.btn:active { transform: translateY(1px); }
+  button.btn.secondary { background: #eef1f6; color: var(--text); }
+  button.btn.secondary:hover { background: #e2e7ef; }
+  button.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  .table-wrap {
+    background: var(--card);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    overflow: auto;
+  }
+  table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+  thead th {
+    position: sticky;
+    top: 0;
+    background: #f0f3f8;
+    color: #374151;
+    text-align: left;
+    font-weight: 600;
+    padding: 11px 14px;
+    border-bottom: 2px solid var(--border);
+    white-space: nowrap;
+  }
+  tbody td {
+    padding: 9px 14px;
+    border-bottom: 1px solid #eef1f5;
+    white-space: nowrap;
+  }
+  tbody tr:hover { background: var(--row-hover); }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.plus { color: var(--plus); }
+  td.minus { color: var(--minus); }
+  td.memo, td.name { white-space: normal; min-width: 140px; }
+
+  .hint {
+    margin: 10px 2px 0;
+    font-size: .83rem;
+    color: var(--muted);
+  }
+  .hint code {
+    background: #eef1f6;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: .82rem;
+  }
+  .error {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #b91c1c;
+    padding: 12px 16px;
+    border-radius: 10px;
+    margin-top: 16px;
+  }
+  .toast {
+    position: fixed;
+    bottom: 26px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: #111827;
+    color: #fff;
+    padding: 11px 22px;
+    border-radius: 30px;
+    font-size: .9rem;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s, transform .2s;
+    z-index: 20;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .hidden { display: none; }
+  footer { text-align: center; color: var(--muted); font-size: .8rem; padding: 20px; }
+  footer a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>OFX → Excel 変換ツール</h1>
+  <p>OFXファイルをドラッグ＆ドロップ → 表を選択してコピー → Excelにタブ区切りで貼り付け</p>
+</header>
+
+<main>
+  <div id="drop" tabindex="0" role="button" aria-label="OFXファイルをドラッグ＆ドロップ、またはクリックして選択">
+    <span class="icon">📄</span>
+    <div><strong>OFXファイルをここにドラッグ＆ドロップ</strong></div>
+    <div style="margin-top:6px;font-size:.85rem;">またはクリックしてファイルを選択（.ofx / .qfx）</div>
+  </div>
+  <input type="file" id="fileInput" accept=".ofx,.qfx,text/xml,application/x-ofx" multiple>
+
+  <div id="errorBox" class="error hidden"></div>
+
+  <div id="result" class="hidden">
+    <div class="toolbar">
+      <div class="meta" id="metaInfo"></div>
+      <button class="btn" id="copyBtn">📋 表をコピー</button>
+      <button class="btn secondary" id="csvBtn">CSVで保存</button>
+      <button class="btn secondary" id="clearBtn">クリア</button>
+    </div>
+    <div class="table-wrap">
+      <table id="txTable">
+        <thead></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="hint">
+      💡 表全体をドラッグして選択し <code>Ctrl+C</code>（Mac: <code>⌘+C</code>）でコピー、
+      Excelで <code>Ctrl+V</code> するとタブ区切りのセルに貼り付けられます。
+      「表をコピー」ボタンでも同じ内容をコピーできます。
+    </p>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<footer>
+  すべての処理はブラウザ内で完結します。ファイルがサーバーに送信されることはありません。
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  const drop = document.getElementById("drop");
+  const fileInput = document.getElementById("fileInput");
+  const result = document.getElementById("result");
+  const errorBox = document.getElementById("errorBox");
+  const thead = document.querySelector("#txTable thead");
+  const tbody = document.querySelector("#txTable tbody");
+  const metaInfo = document.getElementById("metaInfo");
+  const copyBtn = document.getElementById("copyBtn");
+  const csvBtn = document.getElementById("csvBtn");
+  const clearBtn = document.getElementById("clearBtn");
+  const toast = document.getElementById("toast");
+
+  // 表示する列（key はパース結果のフィールド名、label はヘッダー表示）
+  const COLUMNS = [
+    { key: "date",    label: "日付" },
+    { key: "type",    label: "種別" },
+    { key: "amount",  label: "金額",   num: true },
+    { key: "name",    label: "名称",   cls: "name" },
+    { key: "memo",    label: "摘要",   cls: "memo" },
+    { key: "fitid",   label: "取引ID" },
+  ];
+
+  const TRNTYPE_JP = {
+    CREDIT: "入金", DEBIT: "出金", INT: "利息", DIV: "配当",
+    FEE: "手数料", SRVCHG: "手数料", DEP: "預入", ATM: "ATM",
+    POS: "POS", XFER: "振替", CHECK: "小切手", PAYMENT: "支払",
+    CASH: "現金", DIRECTDEP: "振込入金", DIRECTDEBIT: "口座振替",
+    REPEATPMT: "自動支払", OTHER: "その他"
+  };
+
+  let currentRows = [];
+
+  /* ---------- OFX パーサ ---------- */
+
+  // OFX(SGML)の値を取り出す。閉じタグが無いことが多いので改行または次のタグまでを値とする。
+  function tagValue(block, tag) {
+    const re = new RegExp("<" + tag + ">([^<\\r\\n]*)", "i");
+    const m = block.match(re);
+    return m ? m[1].trim() : "";
+  }
+
+  // OFX日付( YYYYMMDDHHMMSS[+9:JST] 形式 )を YYYY/MM/DD に整形
+  function formatDate(raw) {
+    if (!raw) return "";
+    const m = raw.match(/^\s*(\d{4})(\d{2})(\d{2})/);
+    if (!m) return raw;
+    return m[1] + "/" + m[2] + "/" + m[3];
+  }
+
+  function formatAmount(raw) {
+    if (raw === "" || raw == null) return "";
+    // 全角記号や桁区切りカンマを除去
+    const cleaned = raw.replace(/[,\s]/g, "");
+    const n = Number(cleaned);
+    return isNaN(n) ? raw : n;
+  }
+
+  function parseOFX(text) {
+    // <STMTTRN> ... </STMTTRN> ブロックを抽出
+    const trnRe = /<STMTTRN>([\s\S]*?)<\/STMTTRN>/gi;
+    const rows = [];
+    let m;
+    while ((m = trnRe.exec(text)) !== null) {
+      const b = m[1];
+      rows.push({
+        date:   formatDate(tagValue(b, "DTPOSTED")),
+        type:   (function (t) { return TRNTYPE_JP[t.toUpperCase()] || t; })(tagValue(b, "TRNTYPE")),
+        amount: formatAmount(tagValue(b, "TRNAMT")),
+        name:   tagValue(b, "NAME"),
+        memo:   tagValue(b, "MEMO"),
+        fitid:  tagValue(b, "FITID"),
+      });
+    }
+
+    // 口座情報などのメタ情報
+    const meta = {
+      org:      tagValue(text, "ORG"),
+      acctId:   tagValue(text, "ACCTID"),
+      curdef:   tagValue(text, "CURDEF"),
+      dtstart:  formatDate(tagValue(text, "DTSTART")),
+      dtend:    formatDate(tagValue(text, "DTEND")),
+      balance:  tagValue(text, "BALAMT"),
+    };
+
+    return { rows, meta };
+  }
+
+  /* ---------- 描画 ---------- */
+
+  function render(rows, meta, fileName) {
+    currentRows = rows;
+
+    // ヘッダー
+    thead.innerHTML =
+      "<tr>" + COLUMNS.map(c => "<th>" + esc(c.label) + "</th>").join("") + "</tr>";
+
+    // ボディ
+    tbody.innerHTML = rows.map(function (r) {
+      return "<tr>" + COLUMNS.map(function (c) {
+        let v = r[c.key];
+        let cls = c.cls ? c.cls : "";
+        if (c.num) {
+          cls = (cls + " num").trim();
+          if (typeof v === "number") {
+            if (v > 0) cls += " plus";
+            else if (v < 0) cls += " minus";
+            v = v.toLocaleString("ja-JP");
+          }
+        }
+        return "<td" + (cls ? ' class="' + cls + '"' : "") + ">" + esc(v) + "</td>";
+      }).join("") + "</tr>";
+    }).join("");
+
+    // メタ情報
+    const parts = [];
+    if (meta.org) parts.push(meta.org);
+    if (meta.acctId) parts.push("口座 " + meta.acctId);
+    if (meta.dtstart || meta.dtend) parts.push((meta.dtstart || "") + " 〜 " + (meta.dtend || ""));
+    parts.push(rows.length + " 件");
+    if (fileName) parts.push("（" + fileName + "）");
+    metaInfo.textContent = parts.join(" ・ ");
+
+    result.classList.remove("hidden");
+    errorBox.classList.add("hidden");
+    copyBtn.disabled = rows.length === 0;
+    csvBtn.disabled = rows.length === 0;
+  }
+
+  function esc(s) {
+    if (s == null) return "";
+    return String(s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  function showError(msg) {
+    errorBox.textContent = msg;
+    errorBox.classList.remove("hidden");
+    result.classList.add("hidden");
+  }
+
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add("show");
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => toast.classList.remove("show"), 1800);
+  }
+
+  /* ---------- ファイル読み込み ---------- */
+
+  function handleFiles(files) {
+    const list = Array.from(files || []);
+    if (list.length === 0) return;
+
+    let combinedRows = [];
+    let firstMeta = null;
+    let pending = list.length;
+    let hadError = false;
+
+    list.forEach(function (file) {
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        try {
+          const parsed = parseOFX(e.target.result);
+          if (!firstMeta) firstMeta = parsed.meta;
+          combinedRows = combinedRows.concat(parsed.rows);
+        } catch (err) {
+          hadError = true;
+        }
+        if (--pending === 0) finish();
+      };
+      reader.onerror = function () {
+        hadError = true;
+        if (--pending === 0) finish();
+      };
+      reader.readAsText(file, "UTF-8");
+    });
+
+    function finish() {
+      if (combinedRows.length === 0) {
+        showError(hadError
+          ? "ファイルの読み込みに失敗しました。"
+          : "取引明細（STMTTRN）が見つかりませんでした。正しいOFXファイルか確認してください。");
+        return;
+      }
+      const label = list.length === 1 ? list[0].name : list.length + " ファイル";
+      render(combinedRows, firstMeta || {}, label);
+    }
+  }
+
+  /* ---------- コピー（タブ区切り + HTMLテーブル） ---------- */
+
+  function buildClipboardData() {
+    const headers = COLUMNS.map(c => c.label);
+    const lines = [headers.join("\t")];
+    const htmlRows = ["<tr>" + headers.map(h => "<th>" + esc(h) + "</th>").join("") + "</tr>"];
+
+    currentRows.forEach(function (r) {
+      const cells = COLUMNS.map(function (c) {
+        let v = r[c.key];
+        // 数値はそのまま（Excelで数値として扱えるよう桁区切りなし）
+        if (c.num && typeof v === "number") return String(v);
+        return v == null ? "" : String(v);
+      });
+      lines.push(cells.join("\t"));
+      htmlRows.push("<tr>" + cells.map(cell => "<td>" + esc(cell) + "</td>").join("") + "</tr>");
+    });
+
+    const text = lines.join("\n");
+    const html = "<table>" + htmlRows.join("") + "</table>";
+    return { text, html };
+  }
+
+  async function copyTable() {
+    const { text, html } = buildClipboardData();
+    try {
+      if (navigator.clipboard && window.ClipboardItem) {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "text/plain": new Blob([text], { type: "text/plain" }),
+            "text/html": new Blob([html], { type: "text/html" }),
+          })
+        ]);
+      } else if (navigator.clipboard) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        throw new Error("clipboard unavailable");
+      }
+      showToast("コピーしました。Excelに貼り付けできます");
+    } catch (err) {
+      // フォールバック: 一時 textarea 経由
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand("copy");
+        showToast("コピーしました。Excelに貼り付けできます");
+      } catch (e2) {
+        showToast("コピーに失敗しました。表を手動で選択してください");
+      }
+      document.body.removeChild(ta);
+    }
+  }
+
+  function downloadCSV() {
+    const { text } = buildClipboardData();
+    // Excel(日本語)向けに BOM + タブ→カンマではなくタブ区切りTSVをCSV拡張で保存
+    const bom = "﻿";
+    const blob = new Blob([bom + text], { type: "text/tab-separated-values;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "ofx_transactions.tsv";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast("TSVファイルを保存しました");
+  }
+
+  /* ---------- イベント ---------- */
+
+  drop.addEventListener("click", () => fileInput.click());
+  drop.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); }
+  });
+  fileInput.addEventListener("change", (e) => handleFiles(e.target.files));
+
+  ["dragenter", "dragover"].forEach(ev =>
+    drop.addEventListener(ev, (e) => { e.preventDefault(); e.stopPropagation(); drop.classList.add("drag"); }));
+  ["dragleave", "dragend"].forEach(ev =>
+    drop.addEventListener(ev, (e) => { e.preventDefault(); e.stopPropagation(); drop.classList.remove("drag"); }));
+  drop.addEventListener("drop", (e) => {
+    e.preventDefault(); e.stopPropagation();
+    drop.classList.remove("drag");
+    handleFiles(e.dataTransfer.files);
+  });
+
+  // ページ全体へのドロップも受け付ける（外れてもファイルが開かれないように）
+  window.addEventListener("dragover", (e) => e.preventDefault());
+  window.addEventListener("drop", (e) => {
+    if (!drop.contains(e.target)) e.preventDefault();
+  });
+
+  copyBtn.addEventListener("click", copyTable);
+  csvBtn.addEventListener("click", downloadCSV);
+  clearBtn.addEventListener("click", () => {
+    currentRows = [];
+    tbody.innerHTML = "";
+    thead.innerHTML = "";
+    result.classList.add("hidden");
+    fileInput.value = "";
+  });
+})();
+</script>
+</body>
+</html>
