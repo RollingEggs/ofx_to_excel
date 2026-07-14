@@ -17,11 +17,9 @@ OFXファイル（銀行明細）をブラウザ上で表に変換し、Excelへ
 | 列 | OFXフィールド |
 |----|--------------|
 | 日付 | `DTPOSTED` |
-| 種別 | `TRNTYPE`（日本語に変換） |
 | 金額 | `TRNAMT` |
 | 名称 | `NAME` |
 | 摘要 | `MEMO` |
-| 取引ID | `FITID` |
 
 ## GitHub Pages での公開
 
